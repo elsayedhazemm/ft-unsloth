@@ -47,15 +47,23 @@ Scores (comma-separated, one per criterion):"""
 # GENERATION LOGGER
 # ============================================================================
 class GenerationLogger:
-    """Thread-safe logger for saving all generations and scores to JSONL."""
+    """Thread-safe logger for saving all generations and scores to JSONL and readable text."""
 
     def __init__(self, log_dir: str = "outputs/generations"):
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.log_file = self.log_dir / f"generations_{timestamp}.jsonl"
+        self.jsonl_file = self.log_dir / f"generations_{timestamp}.jsonl"
+        self.text_file = self.log_dir / f"generations_{timestamp}.txt"
         self._lock = threading.Lock()
         self._step = 0
+        self._generation_idx = 0
+
+        # Write header to text file
+        with open(self.text_file, "w") as f:
+            f.write("=" * 80 + "\n")
+            f.write(f"GRPO Training Log - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write("=" * 80 + "\n\n")
 
     def log(
         self,
@@ -87,9 +95,53 @@ class GenerationLogger:
                 "total": total_reward,
             },
         }
+
         with self._lock:
-            with open(self.log_file, "a") as f:
+            self._generation_idx += 1
+
+            # Write to JSONL
+            with open(self.jsonl_file, "a") as f:
                 f.write(json.dumps(record) + "\n")
+
+            # Write to human-readable text file
+            with open(self.text_file, "a") as f:
+                f.write("-" * 80 + "\n")
+                f.write(f"Step {self._step} | Generation #{self._generation_idx}\n")
+                f.write(f"Time: {datetime.now().strftime('%H:%M:%S')}\n")
+                f.write("-" * 80 + "\n\n")
+
+                f.write("QUESTION:\n")
+                f.write(question + "\n\n")
+
+                f.write("MODEL GENERATION:\n")
+                f.write(generation + "\n\n")
+
+                f.write("EXTRACTED ANSWER:\n")
+                f.write((extracted_answer or "(No answer tags found)") + "\n\n")
+
+                f.write("GOLD ANSWER:\n")
+                f.write(gold_answer + "\n\n")
+
+                f.write("CRITERIA:\n")
+                for i, c in enumerate(criteria, 1):
+                    f.write(f"  {i}. {c}\n")
+                f.write("\n")
+
+                f.write("LLM SCORES:\n")
+                if llm_scores:
+                    for i, (c, s) in enumerate(zip(criteria, llm_scores), 1):
+                        f.write(f"  {i}. {c[:50]}{'...' if len(c) > 50 else ''}: {s}/5\n")
+                else:
+                    f.write("  (No scores returned)\n")
+                f.write("\n")
+
+                f.write("REWARDS:\n")
+                f.write(f"  Accuracy:      {accuracy_reward:.3f}  (0.0 - 3.0)\n")
+                f.write(f"  Format Exact:  {format_exact_reward:.3f}  (0.0 - 1.0)\n")
+                f.write(f"  Format Approx: {format_approx_reward:.3f}  (-1.0 - 1.0)\n")
+                f.write(f"  ─────────────────────\n")
+                f.write(f"  TOTAL:         {total_reward:.3f}\n")
+                f.write("\n\n")
 
     def increment_step(self):
         """Call this at the start of each training step."""
