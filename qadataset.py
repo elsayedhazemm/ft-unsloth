@@ -4,6 +4,20 @@ from datasets import load_dataset
 raw_dataset = load_dataset("json", data_files="data/rl-a.json", split="train")
 
 
+SYSTEM_PROMPT = """\
+You are a medical expert. Think through the problem carefully, then provide your answer.
+Place your reasoning between <think> and </think>.
+Then provide your final answer between <answer> and </answer>.
+
+Example format:
+<think>
+[Your step-by-step reasoning here]
+</think>
+<answer>
+[Your final answer here]
+</answer>
+"""
+
 def map_grpo_format(example):
     # Extract the user's question from the first turn
     user_prompt = example["conversations"][0]["value"]
@@ -11,6 +25,7 @@ def map_grpo_format(example):
 
     return {
         "prompt": [
+            {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt}
         ],
         "answer": full_resp
