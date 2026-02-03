@@ -1,24 +1,38 @@
+import unsloth
 from reward_funcs import accuracy_reward, match_format_exactly, match_format_approximately
 from trl import GRPOConfig, GRPOTrainer
-from unsloth import FastModel
+from unsloth import FastLanguageModel
 import torch
 from qadataset import dataset
 import os
 
-os.environ["WANDB_API_KEY"] = ""
-os.environ["WANDB_PROJECT"] = ""
-os.environ["WANDB_ENTITY"] = ""
-os.environ["HF_TOKEN"] = ""
+
 
 max_prompt_length = 256
-max_completion_length = 4096
+max_completion_length = 2048
+max_seq_length = max_completion_length + max_prompt_length
+lora_rank = 16
+model, tokenizer = FastLanguageModel.from_pretrained(
+    model_name = "unsloth/gemma-3-4b-it",
+    max_seq_length = max_seq_length,
+    load_in_4bit = False, # False for LoRA 16bit
+    fast_inference = True, # Enable vLLM fast inference
+    max_lora_rank = lora_rank,
+      gpu_memory_utilization = 0.8, # Reduce if out of memory
+)
 
-model, tokenizer = FastModel.from_pretrained(
-    model_name="google/medgemma-1.5-4b-it",
-    max_seq_length=max_completion_length + max_prompt_length,  # Choose any for long context!
-    full_finetuning=True,  # [NEW!] We have full finetuning now!
-    fast_inference=True,
-    token=""
+model = FastLanguageModel.get_peft_model(
+    model,
+    finetune_vision_layers     = False, # False if not finetuning vision layers
+    finetune_language_layers   = True, # False if not finetuning language layers
+    finetune_attention_modules = True, # False if not finetuning attention layers
+    finetune_mlp_modules       = True, # False if not finetuning MLP layers
+
+    r = 16,                           # The larger, the higher the accuracy, but might overfit
+    lora_alpha = 16,                  # Recommended alpha == r at least
+    lora_dropout = 0,
+    bias = "none",
+    random_state = 3407,
 )
 
 training_args = GRPOConfig(
@@ -31,8 +45,8 @@ training_args = GRPOConfig(
     optim="adamw_torch_fused",
     logging_steps=1,
     per_device_train_batch_size=1,
-    gradient_accumulation_steps=4,  # Increase to 4 for smoother training
-    num_generations=8,  # Decrease if out of memory
+    gradient_accumulation_steps=1,  # Increase to 4 for smoother training
+    num_generations=2,  # Decrease if out of memory
     max_prompt_length=max_prompt_length,
     max_completion_length=max_completion_length,
     num_train_epochs = 3, # Set to 1 for a full training run
